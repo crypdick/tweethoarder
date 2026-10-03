@@ -159,11 +159,6 @@ TweetHoarder automatically extracts cookies from your browser. Priority order:
 3. **Firefox**: Auto-detect from `~/.mozilla/firefox/*/cookies.sqlite`
 4. **Brave, Chrome, or Chromium on Linux**: Read cookies from the `Default` profile, trying browsers in that order
 
-Set `auth.cookie_sources` to change the browser order. Encrypted Brave, Chrome,
-and Chromium cookies require an accessible Secret Service keyring unless the
-browser uses basic password storage. Extraction supports cookie databases from
-Chromium 131 and later.
-
 ### Manual Cookie Setup
 
 If auto-detection fails, you can set cookies manually:

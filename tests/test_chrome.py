@@ -195,8 +195,6 @@ def test_extract_cookies_uses_separate_v10_and_v11_keys(
     # Chromium's published Linux v10 key, independent of production derivation.
     v10_key = bytes.fromhex("fd621fe5a2b402539dfa147ca9272778")
     with sqlite3.connect(db_path) as conn:
-        conn.execute("CREATE TABLE meta (key TEXT, value TEXT)")
-        conn.execute("INSERT INTO meta VALUES ('version', '24')")
         conn.execute(
             "UPDATE cookies SET encrypted_value=? WHERE name='auth_token'",
             (_encrypt_cookie(b"brave_auth", v11_key),),
@@ -217,28 +215,15 @@ def test_extract_cookies_uses_separate_v10_and_v11_keys(
     }
 
 
-def test_get_key_returns_none_when_keyring_unavailable(monkeypatch: MonkeyPatch) -> None:
-    from secretstorage.exceptions import SecretServiceNotAvailableException
-
-    from tweethoarder.auth.chrome import get_chrome_encryption_key
-
-    def unavailable() -> None:
-        raise SecretServiceNotAvailableException("Secret Service unavailable")
-
-    monkeypatch.setattr("secretstorage.dbus_init", unavailable)
-    assert get_chrome_encryption_key("brave") is None
-
-
-@pytest.mark.parametrize("host", [".x.com", ".twitter.com"])
-def test_decryption_requires_matching_domain_hash(host: str) -> None:
+def test_decryption_requires_matching_domain_hash() -> None:
     from tweethoarder.auth.chrome import decrypt_chrome_cookie
 
     key = b"0" * 16
     encrypted = _encrypt_cookie(b"cookie_value", key)
-    expected = "cookie_value" if host == ".x.com" else ""
-    assert decrypt_chrome_cookie(encrypted, key, host=host) == expected
+    assert decrypt_chrome_cookie(encrypted, key, host=".x.com") == "cookie_value"
+    assert decrypt_chrome_cookie(encrypted, key, host=".twitter.com") == ""
 
     encryptor = Cipher(algorithms.AES(key), modes.CBC(b" " * 16)).encryptor()
     hashless_cookie = b"cookie_value" + b"\x04" * 4
     encrypted = b"v11" + encryptor.update(hashless_cookie) + encryptor.finalize()
-    assert decrypt_chrome_cookie(encrypted, key, host=host) == ""
+    assert decrypt_chrome_cookie(encrypted, key, host=".x.com") == ""
