@@ -6,7 +6,7 @@ from pathlib import Path
 
 from tweethoarder.auth.chrome import extract_chrome_cookies, find_chrome_cookies_db
 from tweethoarder.auth.firefox import extract_firefox_cookies, find_firefox_cookies_db
-from tweethoarder.config import get_config_dir
+from tweethoarder.config import get_config_dir, load_config
 
 
 class CookieError(Exception):
@@ -41,25 +41,26 @@ def resolve_cookies(home_dir: Path | None = None) -> dict[str, str]:
 
     if home_dir is None:
         home_dir = Path.home()
-    firefox_db = find_firefox_cookies_db(home_dir)
-    if firefox_db:
-        cookies = extract_firefox_cookies(firefox_db)
-        auth_token = cookies.get("auth_token")
-        ct0 = cookies.get("ct0")
-        if auth_token and ct0:
-            result = {"auth_token": auth_token, "ct0": ct0}
-            if "twid" in cookies:
-                result["twid"] = cookies["twid"]
-            return result
+    cookie_sources = load_config(config_path).auth.cookie_sources
+    for source in cookie_sources:
+        if source == "firefox":
+            cookies_db = find_firefox_cookies_db(home_dir)
+            if not cookies_db:
+                continue
+            cookies = extract_firefox_cookies(cookies_db)
+        elif source in ("brave", "chrome", "chromium"):
+            cookies_db = find_chrome_cookies_db(home_dir, browser=source)
+            if not cookies_db:
+                continue
+            cookies = extract_chrome_cookies(cookies_db, browser=source)
+        else:
+            continue
 
-    chrome_db = find_chrome_cookies_db(home_dir)
-    if chrome_db:
-        cookies = extract_chrome_cookies(chrome_db)
         auth_token = cookies.get("auth_token")
         ct0 = cookies.get("ct0")
         if auth_token and ct0:
             result = {"auth_token": auth_token, "ct0": ct0}
-            if "twid" in cookies:
+            if cookies.get("twid"):
                 result["twid"] = cookies["twid"]
             return result
 
