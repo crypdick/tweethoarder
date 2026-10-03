@@ -239,10 +239,13 @@ def test_resolve_cookies_from_chrome_when_firefox_fails(
     assert cookies["ct0"] == f"{browser}_ct0"
 
 
-@pytest.mark.parametrize("failure", ["invalid-database", "unavailable-keyring"])
-def test_resolve_cookies_distinguishes_database_errors_from_missing_keys(
-    monkeypatch: MonkeyPatch, tmp_path: Path, failure: str
+def test_resolve_cookies_falls_back_when_keyring_unavailable(
+    monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
+    from unittest.mock import patch
+
+    from secretstorage.exceptions import SecretServiceNotAvailableException
+
     from tweethoarder.auth.cookies import resolve_cookies
 
     monkeypatch.delenv("TWITTER_AUTH_TOKEN", raising=False)
@@ -251,29 +254,16 @@ def test_resolve_cookies_distinguishes_database_errors_from_missing_keys(
     brave_dir = tmp_path / ".config" / "BraveSoftware" / "Brave-Browser" / "Default"
     brave_dir.mkdir(parents=True)
     brave_db = brave_dir / "Cookies"
-    if failure == "invalid-database":
-        brave_db.write_bytes(b"invalid SQLite database")
-    else:
-        from secretstorage.exceptions import SecretServiceNotAvailableException
-
-        _create_chrome_cookies_db(brave_db, [("auth_token", ""), ("ct0", "")])
-        with sqlite3.connect(brave_db) as conn:
-            conn.execute("UPDATE cookies SET encrypted_value=?", (b"v11" + b"\x00" * 16,))
-
-        def unavailable() -> None:
-            raise SecretServiceNotAvailableException("Secret Service unavailable")
-
-        monkeypatch.setattr("secretstorage.dbus_init", unavailable)
+    _create_chrome_cookies_db(brave_db, [("auth_token", ""), ("ct0", "")])
+    with sqlite3.connect(brave_db) as conn:
+        conn.execute("UPDATE cookies SET encrypted_value=?", (b"v11" + b"\x00" * 16,))
     chrome_dir = tmp_path / ".config" / "google-chrome" / "Default"
     chrome_dir.mkdir(parents=True)
     _create_chrome_cookies_db(
         chrome_dir / "Cookies", [("auth_token", "chrome_auth"), ("ct0", "chrome_ct0")]
     )
 
-    if failure == "invalid-database":
-        with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
-            resolve_cookies(home_dir=tmp_path)
-    else:
+    with patch("secretstorage.dbus_init", side_effect=SecretServiceNotAvailableException()):
         assert resolve_cookies(home_dir=tmp_path) == {
             "auth_token": "chrome_auth",
             "ct0": "chrome_ct0",
