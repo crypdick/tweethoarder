@@ -167,6 +167,8 @@ twid = "u%3D11111"
 def _create_chrome_cookies_db(db_path: Path, cookies: list[tuple[str, str]]) -> None:
     """Create a test Chrome cookies database with unencrypted values."""
     conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE meta (key TEXT, value TEXT)")
+    conn.execute("INSERT INTO meta VALUES ('version', '24')")
     conn.execute("""
         CREATE TABLE cookies (
             creation_utc INTEGER NOT NULL,
@@ -238,7 +240,7 @@ def test_resolve_cookies_from_chrome_when_firefox_fails(
 
 
 @pytest.mark.parametrize("failure", ["invalid-database", "unavailable-keyring"])
-def test_resolve_cookies_skips_unusable_brave_database(
+def test_resolve_cookies_distinguishes_database_errors_from_missing_keys(
     monkeypatch: MonkeyPatch, tmp_path: Path, failure: str
 ) -> None:
     from tweethoarder.auth.cookies import resolve_cookies
@@ -268,10 +270,14 @@ def test_resolve_cookies_skips_unusable_brave_database(
         chrome_dir / "Cookies", [("auth_token", "chrome_auth"), ("ct0", "chrome_ct0")]
     )
 
-    assert resolve_cookies(home_dir=tmp_path) == {
-        "auth_token": "chrome_auth",
-        "ct0": "chrome_ct0",
-    }
+    if failure == "invalid-database":
+        with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+            resolve_cookies(home_dir=tmp_path)
+    else:
+        assert resolve_cookies(home_dir=tmp_path) == {
+            "auth_token": "chrome_auth",
+            "ct0": "chrome_ct0",
+        }
 
 
 @pytest.mark.parametrize(

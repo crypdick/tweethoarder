@@ -12,7 +12,7 @@ TweetHoarder is a Python CLI tool for archiving a user's Twitter/X data (likes, 
 | API Approach | Port bird's GraphQL + query ID refresh mechanism to Python |
 | Authentication | Cookie-based (auto-extract from Firefox/Chrome + manual fallback) |
 | Storage | SQLite with incremental sync |
-| Browser Support | Linux only (Firefox + Chrome/Chromium with keyring decryption) |
+| Browser Support | Linux only (Firefox, Brave, Chrome, and Chromium) |
 | Multi-account | Single account only |
 | Media | URLs only (store metadata, no downloading - schema designed for future extension) |
 | Thread Depth | Configurable, on-demand only |
@@ -354,7 +354,7 @@ $ tweethoarder stats
 3. Auto-extract from Firefox:
    - Standard: `~/.mozilla/firefox/*/cookies.sqlite`
    - Snap: `~/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite`
-4. Auto-extract from Chrome (`~/.config/google-chrome/*/Cookies`) with keyring decryption
+4. Auto-extract from Brave, Chrome, or Chromium on Linux, in that order, using the `Default` profile
 
 **Cookies extracted:** `auth_token`, `ct0`, `twid`
 
@@ -362,14 +362,44 @@ $ tweethoarder stats
 
 ```python
 # Firefox: Read directly from SQLite (unencrypted)
-# Chrome: Use secretstorage to decrypt via GNOME Keyring or KDE Wallet
+# Brave, Chrome, Chromium: Read plaintext or decrypt Linux v10/v11 cookies
 
 def extract_firefox_cookies(db_path: Path) -> dict[str, str]:
     """Extract auth_token, ct0, and twid from Firefox cookies.sqlite"""
 
-def extract_chrome_cookies(db_path: Path) -> dict[str, str]:
-    """Extract and decrypt auth_token, ct0, and twid from Chrome Cookies DB"""
+def extract_chrome_cookies(db_path: Path, browser: str = "chrome") -> dict[str, str]:
+    """Extract and decrypt X session cookies from a Chromium browser database"""
 ```
+
+### Chromium extraction constraints
+
+Browser discovery and encrypted-cookie extraction support Linux only. The removed Darwin branch
+used Linux Secret Service keyring code and had no macOS profile discovery, so it
+didn't provide a working macOS backend. This change keeps existing dependencies
+and package installation requirements.
+
+Linux `v10` cookies use the fixed `peanuts` password. Linux `v11` cookies use the
+selected browser's Secret Service item. A database can contain both formats, so
+keys must stay separate. Cache an unavailable `v11` key for the current
+extraction to avoid repeated keyring calls. Search existing keyring items.
+Creating or unlocking a collection is outside cookie extraction's scope.
+See [Chromium's Linux encryption implementation](https://chromium.googlesource.com/chromium/src/+/140.0.7339.80/components/os_crypt/sync/os_crypt_linux.cc).
+
+Encrypted cookies require the SHA-256 prefix matching their stored `host_key`.
+This format starts with cookie database schema 24, introduced in Chromium 131.
+The decryption helper therefore requires an explicit key and `host` argument.
+Direct callers using the former two-argument signature must supply the host.
+For encrypted cookies, require schema 24 or later. Missing, invalid, or older
+schema metadata raises an error suggesting a browser update and reopening the
+profile. This checks the format without implementing old-format decryption.
+Plaintext cookies remain readable without a keyring, including in older schemas.
+See [Chromium's cookie database format and migration](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/net/extras/sqlite/sqlite_persistent_cookie_store.cc).
+
+Extract only cookies for X or Twitter and prefer X values when both exist.
+Absent profiles or unavailable keyring credentials let resolution try the next
+configured browser. Database and schema errors propagate instead of silently
+falling through to another browser. Environment variables and explicit
+configuration cookies keep priority over browser extraction.
 
 ---
 
@@ -482,8 +512,8 @@ class SyncCheckpoint:
 # auth_token = "your_auth_token"
 # ct0 = "your_ct0_token"
 
-# Cookie source priority: "firefox", "chrome", "manual"
-cookie_sources = ["firefox", "chrome"]
+# Browser cookie source priority
+cookie_sources = ["firefox", "brave", "chrome", "chromium"]
 
 [sync]
 # Default count limits
@@ -1401,4 +1431,3 @@ SELECT * FROM sync_progress;
 -- Find incomplete thread expansions
 SELECT * FROM threads WHERE is_complete = FALSE;
 ```
-

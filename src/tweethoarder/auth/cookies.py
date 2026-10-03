@@ -1,7 +1,6 @@
 """Cookie resolution flow with fallbacks."""
 
 import os
-import sqlite3
 import tomllib
 from pathlib import Path
 
@@ -54,10 +53,7 @@ def resolve_cookies(home_dir: Path | None = None) -> dict[str, str]:
             cookies_db = find_chrome_cookies_db(home_dir, browser=source)
             if not cookies_db:
                 continue
-            try:
-                cookies = extract_chrome_cookies(cookies_db, browser=source)
-            except sqlite3.Error:
-                continue
+            cookies = extract_chrome_cookies(cookies_db, browser=source)
         else:
             continue
 

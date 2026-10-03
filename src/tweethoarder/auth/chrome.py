@@ -1,7 +1,6 @@
 """Chromium-family cookie extraction for TweetHoarder."""
 
 import hashlib
-import logging
 import sqlite3
 from pathlib import Path
 
@@ -19,23 +18,8 @@ def extract_chrome_cookies(db_path: Path, browser: str = "chrome") -> dict[str, 
             """
         )
         rows = cursor.fetchall()
-        schema_version = None
-        if conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'"
-        ).fetchone():
-            version_row = conn.execute("SELECT value FROM meta WHERE key='version'").fetchone()
-            if version_row is not None and str(version_row[0]).isdecimal():
-                schema_version = int(version_row[0])
-
-    old_schema = schema_version is not None and schema_version < 24
-    if old_schema and any(row[3] for row in rows):
-        browser_name = browser.capitalize()
-        logging.getLogger(__name__).warning(
-            "Cannot read %s's encrypted cookies because its cookie database is outdated. "
-            "Update %s, reopen this browser profile, and retry.",
-            browser_name,
-            browser_name,
-        )
+        if any(row[3] for row in rows):
+            _check_cookie_schema(conn, browser)
 
     cookies: dict[str, str] = {}
     encryption_keys: dict[bytes, bytes | None] = {b"v10": _derive_encryption_key(b"peanuts")}
@@ -43,21 +27,33 @@ def extract_chrome_cookies(db_path: Path, browser: str = "chrome") -> dict[str, 
         if name in cookies:
             continue
         if encrypted_value:
-            if old_schema:
-                continue
             version = encrypted_value[:3]
             if version == b"v11" and version not in encryption_keys:
                 encryption_keys[version] = get_chrome_encryption_key(browser)
-            decrypted = decrypt_chrome_cookie(
+            value = decrypt_chrome_cookie(
                 encrypted_value,
                 encryption_keys.get(version),
                 host=host,
             )
-            if decrypted:
-                cookies[name] = decrypted
-        elif value:
+        if value:
             cookies[name] = value
     return cookies
+
+
+def _check_cookie_schema(conn: sqlite3.Connection, browser: str) -> None:
+    """Require schema 24 or later for encrypted cookies."""
+    try:
+        schema_version = int(
+            conn.execute("SELECT value FROM meta WHERE key='version'").fetchone()[0]
+        )
+    except (sqlite3.OperationalError, TypeError, ValueError):
+        schema_version = 0
+    if schema_version < 24:
+        raise ValueError(
+            f"Cannot read {browser.capitalize()}'s encrypted cookies. "
+            "Your cookie database schema might be out of date. "
+            f"Update {browser.capitalize()}, reopen this browser profile, and retry."
+        )
 
 
 def decrypt_chrome_cookie(
