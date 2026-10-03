@@ -227,3 +227,39 @@ def test_decryption_requires_matching_domain_hash() -> None:
     hashless_cookie = b"cookie_value" + b"\x04" * 4
     encrypted = b"v11" + encryptor.update(hashless_cookie) + encryptor.finalize()
     assert decrypt_chrome_cookie(encrypted, key, host=".x.com") == ""
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "encrypted", "should_warn"),
+    [(23, True, True), (24, True, False), (23, False, False)],
+)
+def test_warns_to_update_browser_only_for_old_encrypted_cookies(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    schema_version: int,
+    encrypted: bool,
+    should_warn: bool,
+) -> None:
+    from tweethoarder.auth.chrome import extract_chrome_cookies
+
+    db_path = tmp_path / "Cookies"
+    _create_test_chrome_cookies_db(
+        db_path, [("auth_token", "plain_auth", ".x.com"), ("ct0", "plain_ct0", ".x.com")]
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE meta (key TEXT, value TEXT)")
+        conn.execute("INSERT INTO meta VALUES ('version', ?)", (str(schema_version),))
+        if encrypted:
+            conn.execute("UPDATE cookies SET value='', encrypted_value=?", (b"v10" + b"\x00" * 16,))
+
+    cookies = extract_chrome_cookies(db_path, browser="brave")
+    assert cookies == ({} if encrypted else {"auth_token": "plain_auth", "ct0": "plain_ct0"})
+    messages = [record.getMessage() for record in caplog.records]
+    assert messages == (
+        [
+            "Cannot read Brave's encrypted cookies because its cookie database is outdated. "
+            "Update Brave, reopen this browser profile, and retry."
+        ]
+        if should_warn
+        else []
+    )
