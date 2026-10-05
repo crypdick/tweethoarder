@@ -17,7 +17,7 @@ def test_get_config_dir_returns_xdg_path(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_get_config_dir_uses_home_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     """Config directory should fall back to ~/.config when XDG not set."""
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    monkeypatch.setenv("HOME", "/tmp/test-home")
+    monkeypatch.setattr(Path, "home", lambda: Path("/tmp/test-home"))
     result = get_config_dir()
     assert result == Path("/tmp/test-home/.config/tweethoarder")
 

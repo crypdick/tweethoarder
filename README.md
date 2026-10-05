@@ -257,6 +257,10 @@ just format        # Format code
 just ci            # Run full CI pipeline
 ```
 
+Tests use temporary config, data, and home paths and discard inherited Twitter
+credentials. Authentication tests provide their own synthetic credentials or
+browser profiles; CLI sync tests mock synchronization instead of accessing an account.
+
 ### Project Structure
 
 ```
