@@ -2,6 +2,7 @@
 
 import os
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -11,6 +12,16 @@ os.environ["NO_COLOR"] = "1"
 
 # Pattern to match ANSI escape sequences
 _ANSI_PATTERN = re.compile(r"\x1b\[[0-9;]*m")
+
+
+@pytest.fixture(autouse=True)
+def isolate_host_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep credentials, browser profiles, and archives inside each test."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    for name in ("TWITTER_AUTH_TOKEN", "TWITTER_CT0", "TWITTER_TWID"):
+        monkeypatch.delenv(name, raising=False)
 
 
 def strip_ansi(text: str) -> str:

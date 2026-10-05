@@ -2,6 +2,7 @@
 
 import re
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from typer.testing import CliRunner
@@ -11,14 +12,16 @@ from tweethoarder.cli.main import app
 runner = CliRunner()
 
 
-def test_sync_without_subcommand_is_handled() -> None:
+def test_sync_without_subcommand_is_handled(monkeypatch: pytest.MonkeyPatch) -> None:
     """Running 'sync' without a subcommand should work (not show help)."""
-    # For now, just verify it doesn't error with "Missing command"
+    sync = AsyncMock()
+    monkeypatch.setattr("tweethoarder.cli.sync.sync_all_async", sync)
     result = runner.invoke(app, ["sync"])
     # Strip ANSI escape codes
     clean_output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
-    # Should not show "Missing command" error - we'll implement the callback
-    assert "Missing command" not in clean_output or result.exit_code == 0
+    assert result.exit_code == 0, result.output
+    assert "Sync complete." in clean_output
+    sync.assert_awaited_once()
 
 
 def test_sync_accepts_likes_flag() -> None:
